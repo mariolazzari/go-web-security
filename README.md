@@ -84,3 +84,89 @@ When attackers target a web application, they're usually after:
 - Disruption: Making a service unreliable for notoriety or competitive advantage
 
 Attackers don't have to use your front-end interface or obey its client-side restrictions. They can interact with your back end directly. Just because your website's UI hides the "Delete All Users" button for non-admins doesn't mean an attacker can't send a direct DELETE request to your /users endpoint using curl or Postman.
+
+## Authentication
+
+### Authentication and authorization
+
+Successful authentication changes a request's security context, but it doesn't make the input trustworthy. Just because you're authenticated on Boot.dev doesn't mean we're going to let you change someone else's username!
+
+The server still needs authorization checks before returning private data or allowing protected actions. That said, an attacker who steals an active session credential can use the victim's permissions. Authentication is a high-value target!
+
+```go
+func NormalizeEmail(email string) string {
+	return strings.ToLower(strings.TrimSpace(email))
+}
+```
+
+### Stateless vs. Stateful Authentication
+
+Whenever a web server receives a request, it first needs to answer:
+
+_Is this request coming from an authenticated user?_
+
+Requests typically carry proof-of-authentication through stateless tokens or stateful sessions.
+
+#### Stateless Authentication
+
+Every request carries a credential that the server can validate without looking up a server-side session record. Typically:
+
+- After successful login, the server issues a signed token to the client.
+- The client sends the signed token with each request.
+- The server accepts or rejects the request based on the token without loading a session record.
+
+Sure, the server may still load user data, but "stateless" means the actual token validation doesn't depend on any stored session state. Many stateless systems use bearer tokens encoded as JWTs, and anyone who gets ahold of one can use it until it expires.
+
+#### Stateful Authentication
+
+The server remembers you. Typically:
+
+- After successful login, the server creates a session record and sends a secret session identifier to the client
+- The client sends the secret session identifier with future requests.
+- The server accepts or rejects the request after checking if the session identifier maps to a valid session record (usually in a database or in-memory store).
+
+#### Pros and Cons
+
+Stateless token validation:
+
+- Avoids a server-side session lookup during token validation (simplifies scaling and reduces latency)
+- Makes immediate per-token revocation harder (unless it also checks shared state)
+
+Stateful sessions:
+
+- Require a session store that all application instances can consult (can be slower and more complex to scale)
+- Allow the server to easily revoke a session immediately by invalidating its record
+
+### What Are Sessions?
+
+An authenticated session is created when a user successfully logs in. It's a record stored on the server that says "When a user presents this session ID, let them access this account while the session is valid."
+
+In a typical browser flow, the client stores and sends that ID in a cookie, and the server re-checks it against the session in the database on every request.
+
+#### Session IDs
+
+A session ID is a reference to server-side data (often a row in a sessions table) that stores:
+
+- A unique ID for the session (id, which is secret and given to the client)
+- Which user authenticated (user_id)
+- When the session expires (expires_at)
+- Whether the session has been revoked (revoked_at, can be NULL if the session is still valid)
+
+```go
+func (handler *Handler) Page(responseWriter http.ResponseWriter, request *http.Request) {
+	current, ok := handler.requireAuth(responseWriter, request)
+	if !ok {
+		return
+	}
+
+	handler.logger.Event("account_accessed", map[string]any{
+		"userId":    current.User.ID,
+		"email":     current.User.Email,
+		"expiresAt": current.Session.ExpiresAt,
+	})
+
+	if err := handler.renderPage(responseWriter, http.StatusOK, current, ""); err != nil {
+		handler.internalError(responseWriter, request, err)
+	}
+}
+```
