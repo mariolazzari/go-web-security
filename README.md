@@ -246,3 +246,42 @@ func ClearCookie(responseWriter http.ResponseWriter) {
 	})
 }
 ```
+
+### Session Lifetime
+
+Once a user is authenticated, the next question isn't "Who are you?" It's:
+
+How long should I keep trusting you?
+
+...which is answered by session timeouts, expiration, and revocation.
+
+#### Session Expiration
+
+Every session should have a server-enforced expiration, commonly stored in an expires_at column. Without a well-defined lifetime:
+
+- A stolen session may remain useful for far too long.
+- Old, still-valid sessions accumulate across devices.
+- Clearing one browser's cookie can leave copied session IDs valid on the server.
+
+The server must enforce the expiration. A client-side expiration timestamp helps the browser know when to discard its copy, but an attacker can always bypass browser behavior.
+
+#### So... Short Sessions?
+
+As you can expect, there's a tradeoff here. Short-lived sessions reduce the time an attacker can reuse a stolen session, but they also force users to reauthenticate more often, which is annoying.
+
+Long-lived sessions are more convenient, but they increase the damage window when they're stolen.
+
+There's no single "correct" duration. The right choice depends on what the user is doing, the device, and the damage a stolen session could cause. Applications often combine two limits:
+
+- An inactivity timeout ends a session after no activity, for example, 24 hours.
+- An overall timeout caps the session's total lifetime, for example, 30 days.
+
+#### Revoking Sessions
+
+Expiration isn't enough. You and your users need to be able to revoke access when you suspect a session may be hijacked. Revoking a session means invalidating it immediately. There are also times when a server should automatically revoke sessions, like when a user logs out. It's not enough to just clear the browser cookie.
+
+This is where stateful sessions shine. A server can revoke a session by invalidating its record. A self-contained stateless token can't be individually revoked. That problem can be mitigated (but not eliminated) by short token lifetimes and refresh tokens that can be revoked.
+
+```go
+
+```
