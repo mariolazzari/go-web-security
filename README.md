@@ -170,3 +170,79 @@ func (handler *Handler) Page(responseWriter http.ResponseWriter, request *http.R
 	}
 }
 ```
+
+### What Are Cookies?
+
+Cookies are small name-value pairs that a browser stores and sends with matching HTTP requests. Many web applications happen to store session IDs in cookies, but they're totally different concepts. A cookie contains:
+
+- A name, like: bootdev_session_id
+- A value, like: 7f3c9a21d84e4b6fa2c18e57b9034d6a
+- Optional attributes like:
+  - Secure (sent only over HTTPS, with a localhost exception)
+  - HttpOnly (unavailable to document.cookie)
+  - SameSite (restricts cross-site sending)
+
+#### Full Cookie Auth Flow
+
+- The user logs in with their username and password.
+- The server verifies the credentials and creates a session for that user.
+- The server sends a response with a Set-Cookie header with the session ID.
+- The browser stores the cookie.
+- The user makes a request to post a comment, and the browser automatically sends the session cookie with the request.
+- The server reads the cookie, loads the session, and checks that it's still valid. If it is, the hot-take is posted.
+
+```go
+func SetCookie(responseWriter http.ResponseWriter, session accounts.Session) {
+	http.SetCookie(responseWriter, &http.Cookie{
+		Name:    CookieName,
+		Value:   session.Token,
+		Path:    "/",
+		Expires: session.ExpiresAt,
+	})
+}
+```
+
+### Cookie Security
+
+From the server's point of view, cookies are convenient. From an attacker's point of view, session cookies are exploitable.
+
+If an attacker steals a bearer session cookie and reuses it, the server (usually) can't tell those requests apart from the user's. Some common mistakes are:
+
+- If a session cookie is readable through document.cookie, injected JavaScript can steal it.
+- If a session cookie is sent over plain HTTP, an attacker who can observe the connection can capture it.
+- If a cookie has an unnecessarily broad domain or long expiration, an attacker has more opportunities to steal and reuse it.
+- If the browser attaches a cookie to a malicious cross-site request, cross-site request forgery (CSRF) is possible... which we'll talk about later.
+
+#### Cookie Security Flags
+
+Modern browsers give us tools to limit how cookies behave. The most important ones are:
+
+- HttpOnly (boolean): Prevents JavaScript from reading the cookie through document.cookie.
+- Secure (boolean): Sends the cookie only over HTTPS (and localhost, for development).
+- SameSite (Strict, Lax, None): Restricts when the browser sends the cookie with cross-site requests. Strict is the most restrictive. Lax also permits top-level cross-site navigations using safe methods, which many login flows need.
+
+```go
+func SetCookie(responseWriter http.ResponseWriter, session accounts.Session) {
+	http.SetCookie(responseWriter, &http.Cookie{
+		Name:     CookieName,
+		Value:    session.Token,
+		Path:     "/",
+		Expires:  session.ExpiresAt,
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
+func ClearCookie(responseWriter http.ResponseWriter) {
+	http.SetCookie(responseWriter, &http.Cookie{
+		Name:     CookieName,
+		Path:     "/",
+		Expires:  time.Unix(0, 0),
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+```
